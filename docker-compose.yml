@@ -1,49 +1,282 @@
+# /docker/nexuscloud/docker-compose.yml
+# NexusCloud File Manager - Production Configuration
+
 services:
+  # Main Application Service
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - NODE_VERSION=20
     container_name: nexuscloud_app
+    restart: unless-stopped
+    
     ports:
-      - "3000:3000"
+      - "3000:3000"                    # Main app port
+      - "9229:9229"                    # Node.js inspector (debugging - optional)
+    
     environment:
+      # Core Configuration
       - NODE_ENV=production
       - PORT=3000
-      - APP_URL=http://localhost:3000
-      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+      - TZ=UTC
+      
+      # Application Settings
+      - APP_NAME=NexusCloud
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - API_URL=${API_URL:-http://localhost:3000}
+      
+      # JWT Authentication
+      - JWT_SECRET=${JWT_SECRET:-change_this_in_production_use_openssl_rand_hex_32}
+      - JWT_EXPIRES_IN=7d
+      - JWT_REFRESH_EXPIRES_IN=30d
+      
+      # File Upload Configuration
       - UPLOAD_DIR=/app/uploads
-      - DATA_DIR=/app/data
-      - REDIS_HOST=redis
-    secrets:
-      - jwt_secret
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-104857600}        # 100MB default
+      - ALLOWED_MIME_TYPES=${ALLOWED_MIME_TYPES:-image/*,application/pdf,text/*,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document}
+      
+      # Database
+      - DATABASE_PATH=/app/data/nexuscloud.db
+      - DATABASE_BACKUP_PATH=/app/data/backups
+      
+      # Redis Configuration
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=0
+      
+      # Session Configuration
+      - SESSION_SECRET=${SESSION_SECRET:-change_this_in_production}
+      - SESSION_TTL=86400                      # 24 hours in seconds
+      
+      # Rate Limiting
+      - RATE_LIMIT_WINDOW_MS=900000            # 15 minutes
+      - RATE_LIMIT_MAX_REQUESTS=100             # 100 requests per window
+      
+      # Share Links
+      - SHARE_LINK_EXPIRY_DAYS=7
+      - SHARE_LINK_MAX_DOWNLOADS=100
+      
+      # Security Headers
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - CSP_DIRECTIVES=${CSP_DIRECTIVES:-default-src 'self'}
+      
+      # Logging
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - LOG_FILE=/app/data/app.log
+      
+      # Performance
+      - NODE_OPTIONS=--max-old-space-size=512   # Memory limit 512MB
+      - UV_THREADPOOL_SIZE=4
+      
+      # Health Check
+      - HEALTH_CHECK_INTERVAL=30000
+      
     volumes:
-      - ./uploads:/app/uploads
-      - ./data:/app/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      # Persistent file storage
+      - ./uploads:/app/uploads:rw
+      
+      # Database and application data
+      - ./data:/app/data:rw
+      
+      # Logs (optional, can be removed if not needed)
+      - ./logs:/app/logs:rw
+      
+      # Node modules (cached for performance)
+      - node_modules_cache:/app/node_modules
+      
     depends_on:
       redis:
         condition: service_healthy
+      
+    networks:
+      - nexuscloud_network
+      
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+          
+    security_opt:
+      - no-new-privileges:true
+      
+    read_only: false  # Allows writing to uploads and data directories
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=100M
 
+  # Redis Cache Service
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     container_name: nexuscloud_redis
     restart: unless-stopped
+    
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --auto-aof-rewrite-percentage 100
+      --auto-aof-rewrite-min-size 64mb
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --requirepass ${REDIS_PASSWORD:-}
+      --bind 0.0.0.0
+      --port 6379
+      
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DATABASES=16
+      
+    volumes:
+      - redis_data:/data:rw
+      
+    ports:
+      - "6379:6379"  # Optional: expose for debugging (remove in production)
+      
+    networks:
+      - nexuscloud_network
+      
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 3
-    volumes:
-      - redis_data:/data
+      retries: 5
+      start_period: 10s
+      
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+        
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
+  # Optional: Nginx Reverse Proxy (for production)
+  nginx:
+    image: nginx:alpine
+    container_name: nexuscloud_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/sites:/etc/nginx/sites-enabled:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./uploads:/var/www/uploads:ro  # Direct file access for performance
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - nexuscloud_network
+    profiles:
+      - production
+      - with-proxy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: PostgreSQL (for production scale - comment out if using SQLite)
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexuscloud_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=nexuscloud
+      - POSTGRES_USER=${DB_USER:-nexuscloud}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-change_me}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:rw
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"  # Optional: expose for external tools
+    networks:
+      - nexuscloud_network
+    profiles:
+      - postgres
+      - production-scale
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexuscloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Backup Service (runs daily backups)
+  backup:
+    image: alpine:latest
+    container_name: nexuscloud_backup
+    restart: unless-stopped
+    volumes:
+      - ./data:/data:ro
+      - ./uploads:/uploads:ro
+      - ./backups:/backups:rw
+    environment:
+      - BACKUP_RETAIN_DAYS=30
+      - BACKUP_CRON_SCHEDULE=0 2 * * *  # Daily at 2 AM
+    command: >
+      sh -c "
+      apk add --no-cache postgresql-client tzdata &&
+      echo 'Backup container ready' &&
+      tail -f /dev/null
+      "
+    networks:
+      - nexuscloud_network
+    profiles:
+      - backup
+      - production
+
+# Networks Configuration
+networks:
+  nexuscloud_network:
+    driver: bridge
+    name: nexuscloud_network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+
+# Volumes Configuration
 volumes:
   redis_data:
-
-secrets:
-  jwt_secret:
-    external: true
+    name: nexuscloud_redis_data
+    driver: local
+    
+  node_modules_cache:
+    name: nexuscloud_node_modules
+    driver: local
+    
+  postgres_data:
+    name: nexuscloud_postgres_data
+    driver: local
+    profile: postgres
