@@ -154,7 +154,7 @@ function App() {
           <div className="w-8 h-8 bg-gradient-to-br from-[#00F0FF] to-[#FF6B6B] rounded-lg shadow-lg shadow-[#00F0FF]/20 flex items-center justify-center">
             <HardDrive className="h-4 w-4 text-white" />
           </div>
-          <span className="text-xl font-bold tracking-tight text-white">Nexus<span className="text-[#00F0FF]">Drive</span></span>
+          <span className="text-xl font-bold tracking-tight text-white">Nexus<span className="text-[#00F0FF]">Cloud</span></span>
         </div>
         
         <nav className="flex-1 px-4 space-y-2 mt-4">

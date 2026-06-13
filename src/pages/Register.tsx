@@ -52,7 +52,7 @@ export function Register() {
         
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-[32px] p-8 shadow-2xl">
           <h2 className="text-2xl font-bold text-center text-white mb-2">Create Account</h2>
-          <p className="text-gray-400 text-center text-sm mb-8">Join NexusDrive today</p>
+          <p className="text-gray-400 text-center text-sm mb-8">Join NexusCloud today</p>
 
           {error && <div className="bg-[#FF6B6B]/10 border border-[#FF6B6B]/20 text-[#FF6B6B] text-sm rounded-xl p-3 mb-6">{error}</div>}
 
