@@ -1,47 +1,49 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: nexuscloud_app
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - JWT_SECRET=${JWT_SECRET:-change_this_in_production}
+      - APP_URL=http://localhost:3000
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
       - UPLOAD_DIR=/app/uploads
       - DATA_DIR=/app/data
+      - REDIS_HOST=redis
+    secrets:
+      - jwt_secret
     volumes:
       - ./uploads:/app/uploads
       - ./data:/app/data
-    depends_on:
-      redis:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - nexuscloud_network
+    depends_on:
+      redis:
+        condition: service_healthy
 
   redis:
     image: redis:alpine
     container_name: nexuscloud_redis
     restart: unless-stopped
-    volumes:
-      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - nexuscloud_network
-
-networks:
-  nexuscloud_network:
-    driver: bridge
+      retries: 3
+    volumes:
+      - redis_data:/data
 
 volumes:
   redis_data:
+
+secrets:
+  jwt_secret:
+    external: true

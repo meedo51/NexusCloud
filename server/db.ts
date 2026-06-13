@@ -64,3 +64,4 @@ export async function writeDB(data: DatabaseStructure): Promise<void> {
     console.error('Error writing DB', err);
   }
 }
+
