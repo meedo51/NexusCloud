@@ -1,11 +1,28 @@
-<div align="center">
+# File Management and Sharing App
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+A modern, Dockerized file management and sharing application built with React, TailwindCSS, Express, and Multer.
 
-  <h1>Built with AI Studio</h2>
+## 🚀 Quick Deployment (VPS)
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+1. Clone the repository to your VPS.
+2. Edit `.env.example` and save it as `.env`.
+   - Ensure you update `JWT_SECRET` and `APP_URL`.
+3. Run the application:
+   ```bash
+   docker compose up -d --build
+   ```
+4. Access the app at `http://YOUR_VPS_IP:3000`.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## 🌐 Nginx + Let's Encrypt Setup (Optional)
 
-</div>
+If you are setting up a reverse proxy with Nginx and Let's Encrypt for HTTPS:
+1. Ensure your domain is pointing to your VPS IP.
+2. An example `nginx.conf` is provided. You can include it in your system's Nginx `/etc/nginx/sites-available` or run Nginx as a reversed proxy container alongside the app.
+3. Install `certbot` and run `sudo certbot --nginx -d yourdomain.com`.
+
+## 📁 Architecture
+
+- **Unified Full-Stack Architecture**: To ensure optimal containerization (a single, lightweight Docker image) and a seamless developer experience, this project uses a unified Vite + Express stack. 
+- **Frontend** (`src/`): React SPA using Vite, TailwindCSS, and Framer Motion.
+- **Backend** (`server/`): Express serving API routes, Multer for file uploads, and a simple JSON-based database for persistence.
+- **Storage**: Real files are kept in `./uploads` and metadata in `./data`, both mounted as Docker volumes for persistence.
