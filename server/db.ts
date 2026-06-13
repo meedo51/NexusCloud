@@ -28,12 +28,20 @@ export interface FolderMeta {
   ownerId: string;
 }
 
+export interface UserMeta {
+  id: string;
+  email: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
 interface DatabaseStructure {
   files: FileMeta[];
   folders: FolderMeta[];
+  users: UserMeta[];
 }
 
-const defaultDB: DatabaseStructure = { files: [], folders: [] };
+const defaultDB: DatabaseStructure = { files: [], folders: [], users: [] };
 
 export async function readDB(): Promise<DatabaseStructure> {
   try {

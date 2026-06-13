@@ -4,9 +4,34 @@ import { FileGrid } from './components/FileGrid';
 import { ShareModal } from './components/ShareModal';
 import { FileMeta, FolderMeta } from './types';
 import { FolderPlus, Search, HardDrive, Settings, LogOut, ChevronRight, Home } from 'lucide-react';
-import { debounce } from 'lodash';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { authenticatedFetch, getAuthHeaders } from './services/api';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Login } from './pages/Login';
+import { Register } from './pages/Register';
 
-export default function App() {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return <div className="h-screen w-full flex items-center justify-center bg-space-dark text-[#00F0FF]">Loading...</div>;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+export function AppProvider() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/*" element={<ProtectedRoute><App /></ProtectedRoute>} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+function App() {
   const [files, setFiles] = useState<FileMeta[]>([]);
   const [folders, setFolders] = useState<FolderMeta[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -16,6 +41,7 @@ export default function App() {
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [renameItemId, setRenameItemId] = useState<{ id: string, type: 'file' | 'folder', currentName: string } | null>(null);
+  const { logout, user } = useAuth();
 
   const fetchItems = useCallback(async (folderId: string | null, query: string = '') => {
     try {
@@ -23,10 +49,12 @@ export default function App() {
       if (folderId) url.searchParams.append('folderId', folderId);
       if (query) url.searchParams.append('q', query);
       
-      const res = await fetch(url.toString());
-      const data = await res.json();
-      setFiles(data.files || []);
-      setFolders(data.folders || []);
+      const res = await authenticatedFetch(url.toString());
+      if (res.ok) {
+        const data = await res.json();
+        setFiles(data.files || []);
+        setFolders(data.folders || []);
+      }
     } catch (err) {
       console.error('Failed to fetch items', err);
     }
@@ -50,6 +78,9 @@ export default function App() {
       try {
         await fetch('/api/upload', {
           method: 'POST',
+          headers: {
+            ...getAuthHeaders()
+          },
           body: formData,
         });
       } catch (err) {
@@ -65,7 +96,7 @@ export default function App() {
     if (!newFolderName.trim()) return;
 
     try {
-      await fetch('/api/folders', {
+      await authenticatedFetch('/api/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newFolderName, parentId: currentFolderId }),
@@ -81,7 +112,7 @@ export default function App() {
   const handleDeleteItem = async (id: string, type: 'file' | 'folder') => {
     if (!window.confirm(`Are you sure you want to delete this ${type}?`)) return;
     try {
-      await fetch(`/api/items/${id}?type=${type}`, { method: 'DELETE' });
+      await authenticatedFetch(`/api/items/${id}?type=${type}`, { method: 'DELETE' });
       fetchItems(currentFolderId, searchQuery);
     } catch (err) {
       console.error('Delete failed', err);
@@ -93,7 +124,7 @@ export default function App() {
     if (!renameItemId || !renameItemId.currentName.trim()) return;
 
     try {
-      await fetch(`/api/items/${renameItemId.id}`, {
+      await authenticatedFetch(`/api/items/${renameItemId.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: renameItemId.type, name: renameItemId.currentName }),
@@ -103,6 +134,10 @@ export default function App() {
     } catch (err) {
       console.error('Rename failed', err);
     }
+  };
+
+  const handleShare = async (id: string) => {
+    setShareFileId(id);
   };
 
   return (
@@ -146,11 +181,15 @@ export default function App() {
         </nav>
 
         <div className="p-6 border-t border-white/5">
+          <div className="flex w-full items-center mb-4 px-4 py-2">
+             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-gray-700 to-gray-500 border-2 border-white/10 flex items-center justify-center text-xs font-bold text-white uppercase">{user?.email?.charAt(0) || 'U'}</div>
+             <span className="ml-3 text-xs text-gray-400 truncate max-w-[120px]">{user?.email}</span>
+          </div>
           <button className="flex w-full items-center rounded-lg px-4 py-3 text-sm font-medium text-gray-400 hover:text-white transition-colors">
             <Settings className="mr-3 h-5 w-5" />
             Settings
           </button>
-          <button className="flex w-full items-center rounded-lg px-4 py-3 text-sm font-medium text-brand-coral hover:bg-brand-coral/10 transition-colors">
+          <button onClick={logout} className="flex w-full items-center rounded-lg px-4 py-3 text-sm font-medium text-brand-coral hover:bg-brand-coral/10 transition-colors">
             <LogOut className="mr-3 h-5 w-5" />
             Logout
           </button>

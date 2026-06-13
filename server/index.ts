@@ -3,6 +3,8 @@ import path from 'path';
 import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import { setupRoutes } from './routes';
+import { authRoutes } from './routes/auth';
+import { runMigrations } from './migration';
 import fs from 'fs';
 
 async function startServer() {
@@ -15,8 +17,13 @@ async function startServer() {
   if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
+  await runMigrations();
+
   app.use(cors());
   app.use(express.json());
+
+  // Mount auth
+  app.use('/api/auth', authRoutes);
 
   // Setup API Routes
   setupRoutes(app);

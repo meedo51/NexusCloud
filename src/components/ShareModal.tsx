@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Check, Copy } from 'lucide-react';
+import { authenticatedFetch } from '../services/api';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -13,16 +14,20 @@ export function ShareModal({ isOpen, onClose, fileId }: ShareModalProps) {
   const [expiresAt, setExpiresAt] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
 
   const generateLink = async () => {
     setLoading(true);
+    setError('');
     try {
-      const res = await fetch(`/api/share/${fileId}`, { method: 'POST' });
+      const res = await authenticatedFetch(`/api/share/${fileId}`, { method: 'POST' });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to generate link');
       setShareUrl(data.shareUrl);
       setExpiresAt(data.expiresAt);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -66,6 +71,7 @@ export function ShareModal({ isOpen, onClose, fileId }: ShareModalProps) {
                   <p className="mb-6 text-sm text-gray-400">
                     Generate an expirable, protected link instantly. By default, links automatically expire in 7 days to maintain maximum security.
                   </p>
+                  {error && <p className="mb-4 text-xs font-medium text-brand-coral">{error}</p>}
                   <button
                     onClick={generateLink}
                     disabled={loading}
