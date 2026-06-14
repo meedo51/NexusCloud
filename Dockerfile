@@ -1,43 +1,33 @@
-# Multi-stage Dockerfile for NexusCloud
-FROM node:20-alpine AS builder
+# /docker/nexuscloud/Dockerfile
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy dependency definitions
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 -G nodejs
+
+# Copy package files
 COPY package*.json ./
-# Use npm install to ensure it works without lockfile
-RUN npm install
 
-# Copy all source
-COPY . .
+# Install dependencies
+RUN npm ci --only=production && \
+    npm cache clean --force
 
-# Build Vite frontend and Express server
-RUN npm run build
+# Copy source code
+COPY --chown=nodejs:nodejs . .
 
-# Second stage: production image
-FROM node:20-alpine AS runner
+# Create required directories with proper permissions
+RUN mkdir -p /app/uploads /app/data /app/logs && \
+    chown -R nodejs:nodejs /app && \
+    chmod -R 755 /app/uploads /app/data
 
-# Install tini for init process
-RUN apk add --no-cache tini
+# Switch to non-root user
+USER nodejs
 
-WORKDIR /app
-ENV NODE_ENV=production
-
-# Copy package info and install production dependencies
-COPY --from=builder /app/package*.json ./
-RUN npm install --omit=dev
-
-# Copy built assets
-COPY --from=builder /app/dist ./dist
-
-# Create necessary directories and set permissions
-RUN mkdir -p /app/uploads /app/data && chown -R node:node /app
-
-USER node
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost:3000/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
